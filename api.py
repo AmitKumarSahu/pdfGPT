@@ -10,7 +10,6 @@ import numpy as np
 import openai
 import tensorflow_hub as hub
 from fastapi import UploadFile
-from lcserve import serving
 from sklearn.neighbors import NearestNeighbors
 
 
@@ -143,8 +142,8 @@ def generate_answer(question, openAI_key):
 recommender = SemanticSearch()
 
 
-def load_openai_key() -> str:
-    key = os.environ.get("OPENAI_API_KEY")
+def load_openai_key(apiKey) -> str:
+    key = apiKey
     if key is None:
         raise ValueError(
             "[ERROR]: Please pass your OPENAI_API_KEY. Get your key here : https://platform.openai.com/account/api-keys"
@@ -152,21 +151,14 @@ def load_openai_key() -> str:
     return key
 
 
-@serving
-def ask_url(url: str, question: str):
+def ask_url(url: str, question: str , apiKey:str):
     download_pdf(url, 'corpus.pdf')
     load_recommender('corpus.pdf')
-    openAI_key = load_openai_key()
+    openAI_key = load_openai_key(apiKey)
     return generate_answer(question, openAI_key)
 
 
-@serving
-async def ask_file(file: UploadFile, question: str) -> str:
-    suffix = Path(file.filename).suffix
-    with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        shutil.copyfileobj(file.file, tmp)
-        tmp_path = Path(tmp.name)
-
-    load_recommender(str(tmp_path))
-    openAI_key = load_openai_key()
+def ask_file(file: UploadFile, question: str , apiKey:str) -> str:
+    load_recommender(Path(file.name))
+    openAI_key = load_openai_key(apiKey)
     return generate_answer(question, openAI_key)

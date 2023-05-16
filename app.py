@@ -2,24 +2,23 @@ import json
 from tempfile import _TemporaryFileWrapper
 
 import gradio as gr
-import requests
+from api import *
 
+# List to store previous questions and answers
+chat_history = []
 
 def ask_api(
-    lcserve_host: str,
     url: str,
     file: _TemporaryFileWrapper,
     question: str,
     openAI_key: str,
 ) -> str:
-    if not lcserve_host.startswith('http'):
-        return '[ERROR]: Invalid API Host'
 
-    if url.strip() == '' and file == None:
-        return '[ERROR]: Both URL and PDF is empty. Provide atleast one.'
+    if url.strip() == '' and file is None:
+        return '[ERROR]: Both URL and PDF are empty. Provide at least one.'
 
-    if url.strip() != '' and file != None:
-        return '[ERROR]: Both URL and PDF is provided. Please provide only one (eiter URL or PDF).'
+    if url.strip() != '' and file is not None:
+        return '[ERROR]: Both URL and PDF are provided. Please provide only one (either URL or PDF).'
 
     if question.strip() == '':
         return '[ERROR]: Question field is empty'
@@ -32,61 +31,52 @@ def ask_api(
     }
 
     if url.strip() != '':
-        r = requests.post(
-            f'{lcserve_host}/ask_url',
-            json={'url': url, **_data},
-        )
-
+        r = ask_url(url, question,openAI_key)
     else:
         with open(file.name, 'rb') as f:
-            r = requests.post(
-                f'{lcserve_host}/ask_file',
-                params={'input_data': json.dumps(_data)},
-                files={'file': f},
-            )
+            r = ask_file(file, question ,openAI_key)
 
-    if r.status_code != 200:
-        raise ValueError(f'[ERROR]: {r.text}')
+    # Store the question and its answer in chat_history
+    chat_history.append({'question': question, 'answer': r})
 
-    return r.json()['result']
+    return r
 
 
-title = 'PDF GPT'
-description = """ PDF GPT allows you to chat with your PDF file using Universal Sentence Encoder and Open AI. It gives hallucination free response than other tools as the embeddings are better than OpenAI. The returned response can even cite the page number in square brackets([]) where the information is located, adding credibility to the responses and helping to locate pertinent information quickly."""
+def chat_interface(openAI_key, pdf_url, file, question):
+    if question.strip() == '':
+        return '[ERROR]: Question field is empty'
 
-with gr.Blocks() as demo:
-    gr.Markdown(f'<center><h1>{title}</h1></center>')
-    gr.Markdown(description)
+    answer = ask_api(pdf_url, file, question, openAI_key)
 
-    with gr.Row():
-        with gr.Group():
-            lcserve_host = gr.Textbox(
-                label='Enter your API Host here',
-                value='http://localhost:8080',
-                placeholder='http://localhost:8080',
-            )
-            gr.Markdown(
-                f'<p style="text-align:center">Get your Open AI API key <a href="https://platform.openai.com/account/api-keys">here</a></p>'
-            )
-            openAI_key = gr.Textbox(
-                label='Enter your OpenAI API key here', type='password'
-            )
-            pdf_url = gr.Textbox(label='Enter PDF URL here')
-            gr.Markdown("<center><h4>OR<h4></center>")
-            file = gr.File(
-                label='Upload your PDF/ Research Paper / Book here', file_types=['.pdf']
-            )
-            question = gr.Textbox(label='Enter your question here')
-            btn = gr.Button(value='Submit')
-            btn.style(full_width=True)
+    # Format the previous questions and answers for display
+    chat_display = "\n".join(
+        [f"<strong>User:</strong> {qa['question']}<br><strong>ChatGPT:</strong> {qa['answer']}<br>" for qa in chat_history]
+    )
 
-        with gr.Group():
-            answer = gr.Textbox(label='The answer to your question is :')
+    return f"<strong>User:</strong> {question}<br><strong>ChatGPT:</strong> {answer}<br><br><strong>Chat History:</strong><br>{chat_display}"
 
-        btn.click(
-            ask_api,
-            inputs=[lcserve_host, pdf_url, file, question, openAI_key],
-            outputs=[answer],
-        )
 
-demo.launch(server_port=7860)
+title = 'PDF GPT - Chat Interface'
+description = """PDF GPT allows you to chat with your PDF file using Universal Sentence Encoder and Open AI. It gives hallucination-free responses as the embeddings are better than OpenAI. The returned response can even cite the page number in square brackets([]) where the information is located, adding credibility to the responses and helping to locate pertinent information quickly."""
+
+iface = gr.Interface(
+    fn=chat_interface,
+    inputs=[
+        gr.Textbox(label='User:', placeholder='Enter your message here...', lines=2),
+        gr.Textbox(label='ChatGPT:', readonly=True, placeholder='ChatGPT response...', lines=2),
+        gr.Textbox(label='OpenAI API key:', type='password'),
+        gr.Textbox(label='PDF URL:', placeholder='Enter PDF URL (optional)'),
+        gr.File(label='Upload PDF:', file_types=['.pdf'], placeholder='Upload PDF file (optional)'),
+    ],
+    outputs=gr.HTML(label='Chat History and Answer:', html=True),
+    title=title,
+    description=description,
+    examples=[
+        ['What is the capital of France?'],
+        ['Can you tell me about the history of artificial intelligence?'],
+    ],
+    allow_flagging=False,
+    allow_screenshot=False,
+)
+
+iface.launch(share=True)
