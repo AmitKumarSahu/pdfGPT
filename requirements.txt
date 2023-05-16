@@ -5,4 +5,3 @@ tensorflow>=2.0.0
 tensorflow-hub
 openai==0.10.2
 gradio
-langchain-serve>=0.0.19
